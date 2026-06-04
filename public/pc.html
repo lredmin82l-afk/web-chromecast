@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <title>PC 내비게이션 모니터</title>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_APP_KEY"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         body { margin: 0; padding: 0; font-family: sans-serif; text-align: center; }
         #map { width: 100vw; height: 80vh; background-color: #eee; }
@@ -14,7 +15,6 @@
 <body>
 
     <div id="map"></div>
-    
     <div id="info-panel">
         <div id="status">스마트폰 내비게이션 연결 대기 중... (접속 코드 생성 중)</div>
     </div>
@@ -23,44 +23,49 @@
         const socket = io();
         let map, marker;
 
-        // 1. 카카오 지도 초기화 (기본 중심 좌표: 서울시청)
-        const container = document.getElementById('map');
-        const options = {
-            center: new kakao.maps.LatLng(37.5665, 126.9780),
-            level: 3
-        };
-        map = new kakao.maps. someMap ? kakao.maps.someMap : new kakao.maps.Map(container, options);
+        // 1. 무료 지도 초기화 (서울시청 좌표)
+        map = L.map('map').setView([37.5665, 126.9780], 16);
+        L.tileLayer('https://{s}.tile.carto.com/light_all/{z}/{x}/{y}.png', {
+            maxZoom: 19
+        }).addTo(map);
 
-        // 실시간 움직임을 표시할 마커(자동차 역할) 생성
-        marker = new kakao.maps.Marker({ position: map.getCenter() });
-        marker.setMap(map);
+        // 마커 생성
+        marker = L.marker([37.5665, 126.9780]).addTo(map);
 
         // 2. 서버에 방 생성 요청
         socket.emit('create-room');
 
         socket.on('room-created', (roomId) => {
-            document.getElementById('status').innerText = `📱 스마트폰 브라우저에서 /mobile.html?room=${roomId} 로 접속하세요.`;
+            // 주소창에서 origin을 부드럽게 가져와 매핑
+            const mobileUrl = `${window.location.origin}/mobile.html?room=${roomId}`;
+            document.getElementById('info-panel').innerHTML = `
+                <div style="font-size:18px;">
+                    <p style="margin:5px 0; color:#10b981; font-weight:bold;">접속 코드: ${roomId}</p>
+                    <p style="margin:5px 0; color:gray;">아래 QR코드가 안 보이면 스마트폰 브라우저에 직접 입력하세요:</p>
+                    <p style="margin:5px 0; font-size:14px; color:#3b82f6;">${mobileUrl}</p>
+                </div>
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(mobileUrl)}" style="margin-left:20px; width:100px; height:100px; border-radius:5px;">
+            `;
         });
 
         socket.on('remote-connected', () => {
-            document.getElementById('status').innerText = `🟢 내비게이션 연동 완료! 실시간 주행 시작 가능`;
-            document.getElementById('status').style.color = "#10b981";
+            alert("📱 스마트폰 리모컨 연결 완료!");
         });
 
-        // 3. 모바일로부터 실시간 GPS 좌표 및 주행 정보 수신
+        // 3. 모바일로부터 실시간 좌표 수신
         socket.on('receive-control', (data) => {
             if (data.type === 'NAV_UPDATE') {
                 const lat = data.latitude;
                 const lng = data.longitude;
                 const nextStep = data.nextStep;
 
-                // 지도 중심을 스마트폰 주행 위치로 이동
-                const newPos = new kakao.maps.LatLng(lat, lng);
-                map.setCenter(newPos);
-                marker.setPosition(newPos);
+                // 지도 중심 및 마커 이동
+                map.setView([lat, lng], 16);
+                marker.setLatLng([lat, lng]);
 
-                // 하단에 실시간 주행 안내 문구 표출
-                document.getElementById('status').innerText = `🚘 실시간 주행 중: ${nextStep}`;
+                // 안내 문구 출력
+                const statusDiv = document.querySelector('#info-panel p');
+                if(statusDiv) statusDiv.innerText = `🚘 실시간 주행 중: ${nextStep}`;
             }
         });
     </script>
