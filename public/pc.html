@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>PC 플레이어 화면</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { text-align: center; font-family: sans-serif; padding-top: 50px; background-color: #f8f9fa; }
+        #status { color: gray; font-weight: bold; margin-top: 10px; }
+        #qrImage { display: none; margin: 20px auto; width: 200px; height: 200px; border: 3px solid #007bff; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <h1>📺 크롬캐스트 PC 플레이어</h1>
+    <h3 id="roomCode">방 생성 중...</h3>
+    
+    <img id="qrImage" src="" alt="QR Code">
+    <p id="status">스마트폰 카메라로 위 QR코드를 스캔하여 연결하세요.</p>
+
+    <br><br>
+    <video id="myVideo" width="640" controls src="https://www.w3schools.com/html/mov_bbb.mp4"></video>
+
+    <script>
+        const socket = io();
+        const video = document.getElementById('myVideo');
+        let currentRoomId = '';
+
+        // 서버에 방 생성 요청
+        socket.emit('create-room');
+
+        // 서버가 방을 만들어 번호를 보내주면 실행
+        socket.on('room-created', (roomId) => {
+            currentRoomId = roomId;
+            document.getElementById('roomCode').innerText = `접속 코드: ${roomId}`;
+            
+            // 스마트폰이 접속하게 될 리모컨 주소 자동 생성
+            const mobileUrl = `${window.location.origin}/mobile.html?room=${roomId}`;
+            
+            // 무료 QR코드 생성 API를 이용해 즉석에서 QR이미지 매핑
+            document.getElementById('qrImage').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(mobileUrl)}`;
+            document.getElementById('qrImage').style.display = 'block';
+        });
+
+        // 스마트폰이 정상적으로 방에 들어왔을 때
+        socket.on('remote-connected', () => {
+            document.getElementById('status').innerText = "📱 스마트폰 리모컨이 연결되었습니다!";
+            document.getElementById('status').style.color = "green";
+        });
+
+        // 스마트폰 리모컨으로부터 제어 명령을 받았을 때
+        socket.on('receive-control', (action) => {
+            if (action === 'PLAY') {
+                video.play();
+            } else if (action === 'PAUSE') {
+                video.pause();
+            }
+        });
+    </script>
+</body>
+</html>

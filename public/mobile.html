@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>모바일 리모컨</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { text-align: center; font-family: sans-serif; padding: 30px; background-color: #f1f3f5; }
+        #info { font-size: 18px; margin-bottom: 30px; color: #495057; }
+        button { width: 100%; height: 90px; margin: 15px 0; font-size: 24px; font-weight: bold; border-radius: 15px; border: none; color: white; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .play { background-color: #28a745; }
+        .pause { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <h1>📱 스마트폰 리모컨</h1>
+    <p id="info">방 연결 중...</p>
+
+    <button class="play" onclick="sendCmd('PLAY')">▶ 영상 재생</button>
+    <button class="pause" onclick="sendCmd('PAUSE')">⏸ 일시정지</button>
+
+    <script>
+        const socket = io();
+        
+        // 주소창(URL)에서 ?room=123456 형태의 방 번호를 자동으로 추출
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomId = urlParams.get('room');
+
+        if (roomId) {
+            document.getElementById('info').innerText = `연결된 방 번호: ${roomId}`;
+            // 추출한 방 번호를 들고 서버에 입장 요청
+            socket.emit('join-room', roomId);
+        } else {
+            document.getElementById('info').innerText = "오류: 정상적인 접근이 아닙니다.";
+        }
+
+        // 버튼을 누르면 서버로 명령을 전송하는 함수
+        function sendCmd(actionType) {
+            socket.emit('send-control', {
+                roomId: roomId,
+                action: actionType
+            });
+        }
+    </script>
+</body>
+</html>
