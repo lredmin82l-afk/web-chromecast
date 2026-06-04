@@ -2,45 +2,76 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>모바일 리모컨</title>
+    <title>모바일 내비 컨트롤러</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { text-align: center; font-family: sans-serif; padding: 30px; background-color: #f1f3f5; }
-        #info { font-size: 18px; margin-bottom: 30px; color: #495057; }
-        button { width: 100%; height: 90px; margin: 15px 0; font-size: 24px; font-weight: bold; border-radius: 15px; border: none; color: white; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .play { background-color: #28a745; }
-        .pause { background-color: #dc3545; }
+        button { width: 100%; height: 80px; margin: 15px 0; font-size: 22px; font-weight: bold; border-radius: 15px; border: none; color: white; cursor: pointer; }
+        .start { background-color: #007bff; }
+        .stop { background-color: #6c757d; }
     </style>
 </head>
 <body>
-    <h1>📱 스마트폰 리모컨</h1>
+    <h1>📱 내비게이션 송신기</h1>
     <p id="info">방 연결 중...</p>
 
-    <button class="play" onclick="sendCmd('PLAY')">▶ 영상 재생</button>
-    <button class="pause" onclick="sendCmd('PAUSE')">⏸ 일시정지</button>
+    <button class="start" onclick="startDriving()">🚀 가상 주행 시작</button>
+    <button class="stop" onclick="stopDriving()">⏹ 주행 종료</button>
 
     <script>
         const socket = io();
-        
-        // 주소창(URL)에서 ?room=123456 형태의 방 번호를 자동으로 추출
         const urlParams = new URLSearchParams(window.location.search);
         const roomId = urlParams.get('room');
+        let driveInterval;
 
         if (roomId) {
-            document.getElementById('info').innerText = `연결된 방 번호: ${roomId}`;
-            // 추출한 방 번호를 들고 서버에 입장 요청
+            document.getElementById('info').innerText = `연결된 차량 번호: ${roomId}\n(이제 이 브라우저를 내리고 딴짓을 해도 주행 데이터는 계속 전송됩니다)`;
             socket.emit('join-room', roomId);
-        } else {
-            document.getElementById('info').innerText = "오류: 정상적인 접근이 아닙니다.";
         }
 
-        // 버튼을 누르면 서버로 명령을 전송하는 함수
-        function sendCmd(actionType) {
-            socket.emit('send-control', {
-                roomId: roomId,
-                action: actionType
-            });
+        // 테스트용 가상 이동 경로 데이터 (서울시청 일대 주행 좌표 배열)
+        const mockPath = [
+            { lat: 37.5665, lng: 126.9780, step: "300m 앞 시청교차로에서 우회전입니다." },
+            { lat: 37.5675, lng: 126.9785, step: "잠시 후 우회전입니다." },
+            { lat: 37.5673, lng: 126.9800, step: "을지로 방향으로 직진입니다." },
+            { lat: 37.5670, lng: 126.9820, step: "500m 앞 목적지가 있습니다." },
+            { lat: 37.5668, lng: 126.9840, step: "목적지에 도착했습니다. 안내를 종료합니다." }
+        ];
+        let currentIndex = 0;
+
+        // 1초마다 PC로 현재 위치 좌표 쏘기
+        function startDriving() {
+            if (driveInterval) return;
+            
+            driveInterval = setInterval(() => {
+                if (currentIndex >= mockPath.length) {
+                    currentIndex = 0; // 경로 반복
+                }
+
+                const currentPos = mockPath[currentIndex];
+                
+                // 서버를 거쳐 PC 웹으로 좌표 데이터 송신
+                socket.emit('send-control', {
+                    roomId: roomId,
+                    action: {
+                        type: 'NAV_UPDATE',
+                        latitude: currentPos.lat,
+                        longitude: currentPos.lng,
+                        nextStep: currentPos.step
+                    }
+                });
+
+                currentIndex++;
+            }, 1500); // 1.5초 간격으로 갱신
+            
+            alert("가상 내비게이션 주행 신호 송출 시작! 핸드폰으로 다른 작업을 해보세요.");
+        }
+
+        function stopDriving() {
+            clearInterval(driveInterval);
+            driveInterval = null;
+            alert("주행 종료");
         }
     </script>
 </body>
