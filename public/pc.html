@@ -1,81 +1,69 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>📺 실시간 모바일 화면 미러링 모니터</title>
-    <script src="/socket.io/socket.io.js"></script>
+    <title>MirrorCast 수신 모니터</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; background-color: #0c0f12; color: #ffffff; font-family: 'Malgun Gothic', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
-        #wrapper { display: flex; flex-direction: column; align-items: center; }
-        /* 스마트폰 화면 비율 그대로 세로형 디스플레이 지정 */
-        video { width: 380px; height: 675px; background-color: #000; border: 6px solid #2d3748; border-radius: 36px; box-shadow: 0px 25px 50px -12px rgba(0,0,0,0.5); transform: rotate(0deg); transition: all 0.3s; }
-        #status-panel { margin-top: 25px; padding: 15px 30px; background: #1a202c; border-radius: 16px; border: 1px solid #2d3748; text-align: center; }
-        .highlight { color: #38bdf8; font-weight: bold; font-size: 26px; }
+        body { margin: 0; background-color: #121212; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
+        #status-panel { margin-bottom: 15px; font-size: 18px; padding: 10px 20px; border-radius: 30px; background-color: #1e1e1e; display: flex; align-items: center; gap: 10px; }
+        .badge { padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 12px; }
+        .badge-ready { background-color: #34c759; }
+        .badge-live { background-color: #ff3b30; animation: blink 1.5s infinite; }
+        .badge-disconnected { background-color: #555; }
+        #mirror-view { max-width: 90vw; max-height: 70vh; border: 4px solid #2a2a2a; border-radius: 16px; background-color: #000; display: none; box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
+        #debug-console { width: 500px; height: 120px; margin-top: 15px; background-color: #000; border: 1px solid #333; font-family: monospace; font-size: 11px; color: #00ff00; overflow-y: scroll; border-radius: 8px; padding: 10px; box-sizing: border-box;}
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
     </style>
 </head>
 <body>
-
-    <div id="wrapper">
-        <video id="mirrorView" autoplay playsinline muted></video>
-        
-        <div id="status-panel">
-            <div id="status">안전한 실시간 미러링 연결 통로를 개설하는 중...</div>
-        </div>
+    <div id="status-panel">
+        <span id="badge" class="badge badge-disconnected">CONNECTING</span>
+        <span id="status-text">서버 연결 대기 중...</span>
     </div>
 
+    <img id="mirror-view" src="" alt="스마트폰 미러링 화면">
+    <div id="debug-console">📋 [시스템 가동] 서버 신호 감시 중...</div>
+
     <script>
-        const socket = io();
-        const videoElement = document.getElementById('mirrorView');
-        let pc;
-        let currentRoomId;
+        const socket = io("https://web-chromecast.onrender.com", { transports: ['websocket'] });
+        const targetRoomId = "my_test_room"; 
 
-        // 초고속 다이렉트 영상 송수신을 위한 구글 표준 인프라 서버 등록
-        const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+        const badge = document.getElementById("badge");
+        const statusText = document.getElementById("status-text");
+        const mirrorView = document.getElementById("mirror-view");
+        const debugConsole = document.getElementById("debug-console");
 
-        // 1. 서버에 접속 방 개설 요청
-        socket.emit('create-room');
+        function printLog(msg) {
+            debugConsole.innerHTML += "<br>➔ " + msg;
+            debugConsole.scrollTop = debugConsole.scrollHeight;
+        }
 
-        socket.on('room-created', (roomId) => {
-            currentRoomId = roomId;
-            document.getElementById('status').innerHTML = `📱 스마트폰 미러링 앱을 켜고 <span class="highlight">${roomId}</span> 번을 입력하세요.`;
+        socket.on("connect", () => {
+            badge.className = "badge badge-ready";
+            badge.innerText = "READY";
+            statusText.innerText = `대기 중... 스마트폰 앱 버튼을 눌러주세요.`;
+            printLog("🎯 서버 연결 성공! 방 입장을 요청합니다.");
+            socket.emit("join-room", targetRoomId);
         });
 
-        socket.on('remote-connected', () => {
-            document.getElementById('status').innerText = "🟢 모바일 기기 감지됨! 신호 연결을 동기화합니다...";
+        socket.on("disconnect", () => {
+            badge.className = "badge badge-disconnected";
+            badge.innerText = "OFFLINE";
+            mirrorView.style.display = "none";
         });
 
-        // 2. 모바일 앱이 화면 데이터(Offer)를 들고 노크할 때 작동
-        socket.on('webrtc-offer', async (data) => {
-            pc = new RTCPeerConnection(rtcConfig);
-
-            // 상대방 회선 주소(Candidate) 정보 가동
-            pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socket.emit('webrtc-candidate', { roomId: currentRoomId, candidate: event.candidate });
+        // 🌟 [핵심 수정] 서버가 중계해 준 webrtc-offer 신호 주머니를 열어서 이미지를 꺼냅니다.
+        socket.on("webrtc-offer", (data) => {
+            if (data && data.image) {
+                if (badge.innerText !== "LIVE") {
+                    badge.className = "badge badge-live";
+                    badge.innerText = "LIVE";
+                    statusText.innerText = `실시간 화면 송출 중`;
+                    mirrorView.style.display = "block";
                 }
-            };
-
-            // 안드로이드 폰의 실시간 화면 스트림 영상이 도착하면 video 태그에 즉시 주입
-            pc.ontrack = (event) => {
-                if (videoElement.srcObject !== event.streams[0]) {
-                    videoElement.srcObject = event.streams[0];
-                    document.getElementById('status').innerHTML = "🚀 <span style='color:#10b981; font-weight:bold;'>실시간 화면 미러링 중</span> (이제 폰에서 티맵을 켜세요!)";
-                }
-            };
-
-            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-            
-            // 수락 답변(Answer) 생성 후 모바일 앱으로 재전송
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            
-            socket.emit('webrtc-answer', { roomId: currentRoomId, answer: answer });
-        });
-
-        // 모바일과 통신망을 다이렉트로 매칭해주는 코드
-        socket.on('webrtc-candidate', async (data) => {
-            if (pc) {
-                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                mirrorView.src = data.image;
+                printLog(`⚡ 화면 프레임 복제 성공! (${Math.round(data.image.length / 1024)} KB)`);
             }
         });
     </script>
